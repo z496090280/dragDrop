@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0">
+    <title>test</title>
+    <style>
+    .wrap{
+        width: 100%;
+        overflow-x: hidden;
+        height: 100%;
+    }
+    .draggable{
+        width: 100px;
+        height: 100px;
+        background: red;
+    }
+    #status{
+        width: 100px;
+        height: 100px;
+        border :1px solid red;
+    }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <!-- 可实现class名为draggable的拖拽效果 -->
+        <div class="draggable" style = "position: absolute"></div>
+        <div class="draggable" style="position: absolute;left:300px;"></div>
+        <div class="draggable" style="position: absolute;left:600px;"></div>
+
+         
+        <p id="status" style="position: absolute;left:600px;top:300px"></p>
+
+    </div>
+<script src="http://libs.baidu.com/jquery/1.10.2/jquery.min.js"></script>
+<script>
+window.onload=function(){
+    //跨浏览器EventUtil对象
+    var EventUtil = {
+
+        addHandler: function (element, type, handler) { //添加事件
+            if (element.addEventListener) {
+                element.addEventListener(type, handler, false);  //使用DOM2级方法添加事件
+            } else if (element.attachEvent) {                    //使用IE方法添加事件
+                element.attachEvent("on" + type, handler);
+            } else {
+                element["on" + type] = handler;          //使用DOM0级方法添加事件
+            }
+        },
+
+        removeHandler: function (element, type, handler) {  //取消事件
+            if (element.removeEventListener) {
+                element.removeEventListener(type, handler, false);
+            } else if (element.detachEvent) {
+                element.detachEvent("on" + type, handler);
+            } else {
+                element["on" + type] = null;
+            }
+        },
+
+        getEvent: function (event) {  //使用这个方法跨浏览器取得event对象
+            return event ? event : window.event;
+        },
+
+        getTarget: function (event) {  //返回事件的实际目标
+            return event.target || event.srcElement;
+        },
+
+        preventDefault: function (event) {   //阻止事件的默认行为
+            if (event.preventDefault) {
+                event.preventDefault();
+            } else {
+                event.returnValue = false;
+            }
+        },
+
+        stopPropagation: function (event) {  //立即停止事件在DOM中的传播
+            //避免触发注册在document.body上面的事件处理程序
+            if (event.stopPropagation) {
+                event.stopPropagation();
+            } else {
+                event.cancelBubble = true;
+            }
+        },
+
+        getRelatedTarget: function (event) {  //获取mouseover和mouseout相关元素
+            if (event.relatedTarget) {
+                return event.relatedTarget;
+            } else if (event.toElement) {      //兼容IE8-
+                return event.toElement;
+            } else if (event.formElement) {
+                return event.formElement;
+            } else {
+                return null;
+            }
+        },
+
+        getButton: function (event) {    //获取mousedown或mouseup按下或释放的按钮是鼠标中的哪一个
+            if (document.implementation.hasFeature("MouseEvents", "2.0")) {
+                return event.button;
+            } else {
+                switch (event.button) {   //将IE模型下的button属性映射为DOM模型下的button属性
+                    case 0:
+                    case 1:
+                    case 3:
+                    case 5:
+                    case 7:
+                        return 0;  //按下的是鼠标主按钮（一般是左键）
+                    case 2:
+                    case 6:
+                        return 2;  //按下的是中间的鼠标按钮
+                    case 4:
+                        return 1;  //鼠标次按钮（一般是右键）
+                }
+            }
+        },
+
+        getWheelDelta: function (event) { //获取表示鼠标滚轮滚动方向的数值
+            if (event.wheelDelta) {
+                return event.wheelDelta;
+            } else {
+                return -event.detail * 40;
+            }
+        },
+
+        getCharCode: function (event) {   //以跨浏览器取得相同的字符编码，需在keypress事件中使用
+            if (typeof event.charCode == "number") {
+                return event.charCode;
+            } else {
+                return event.keyCode;
+            }
+        }
+
+    };
+    //封装自定义事件
+    function EventTarget(){
+        this.handlers = {}
+    }
+    EventTarget.prototype = {
+        constructor : EventTarget,
+        addHandler : function(type,handler){
+            if(typeof this.handlers[type] == "undefined"){
+                this.handlers[type] = []
+            }
+            this.handlers[type].push(handler)
+        },
+
+        fire:function(event){
+            if(!event.target){
+                event.target = this
+            }
+            if(this.handlers[event.type] instanceof Array){
+                var handlers = this.handlers[event.type]
+                for(var i=0,len = handlers.length;i<len;i++){
+                    handlers[i](event)
+                }
+            }
+        },
+
+        removeHandler:function(type,handler){
+            if(this.handlers[type] instanceof Array){
+                var handlers = this.handlers[type]
+                for(var i=0,len=handlers.length;i<len;i++){
+                    if(handlers[i]===handler){
+                        break
+                    }
+                }
+                handlers.splice(i,1)
+            }
+        }
+    }
+    //封装拖拽基本功能
+    var DragDrop = function(){
+        var dragdrop = new EventTarget(),
+            dragging = null,
+            diffX = 0,
+            diffY = 0
+        function handleEvent(event){
+            event = EventUtil.getEvent(event)
+            var target = EventUtil.getTarget(event)
+
+            switch (event.type) {
+                case 'mousedown':
+                    if(target.className.indexOf("draggable")>-1){
+                        dragging = target
+                        diffX = event.clientX - target.offsetLeft
+                        diffY = event.clientY - target.offsetTop
+                            dragdrop.fire({type:"dragstart",target:dragging,x:event.clientX,y:event.clientY})
+                    }
+                    break;
+            
+                case 'mousemove':
+                    if(dragging !== null){
+                        dragging.style.left = (event.clientX - diffX) + 'px'
+                        dragging.style.top = (event.clientY - diffY) + 'px'
+                            dragdrop.fire({ type: "drag", target: dragging, x: event.clientX, y: event.clientY })
+                    }
+                    break;
+                case 'mouseup':
+                    dragdrop.fire({ type: "dragend", target: dragging, x: event.clientX, y: event.clientY })
+                    dragging = null
+                    break;
+            }
+        }
+        
+        dragdrop.enable=function(){
+            EventUtil.addHandler(document,'mousedown', handleEvent)
+            EventUtil.addHandler(document, 'mousemove', handleEvent)
+            EventUtil.addHandler(document, 'mouseup', handleEvent)
+        }
+        dragdrop.disable=function(){
+            EventUtil.removeHandler(document, 'mousedown', handleEvent)
+            EventUtil.removeHandler(document, 'mousemove', handleEvent)
+            EventUtil.removeHandler(document, 'mouseup', handleEvent)
+        }
+        return dragdrop
+    }()
+
+    
+    //监听自定义事件
+    DragDrop.addHandler("dragstart",function(event){
+        var status = document.getElementById('status')
+        status.innerHTML = '开始拖拽' + event.target.id
+    })
+
+    DragDrop.addHandler("drag", function (event) {
+        var status = document.getElementById('status')
+        status.innerHTML = '<br/>拖拽' + event.target.id + "to(" + event.x + ',' +event.y +')'
+    })
+
+    DragDrop.addHandler("dragend", function (event) {
+        var status = document.getElementById('status')
+        status.innerHTML = '<br/>拖拽结束位置' + event.target.id + "at(" + event.x + ',' + event.y + ')'
+    })
+    //调用
+    DragDrop.enable()
+    
+ } 
+</script>
+</body>
+</html>
